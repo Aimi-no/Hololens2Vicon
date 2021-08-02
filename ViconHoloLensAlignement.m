@@ -6,7 +6,7 @@ BMax = 100;
 [vicom, pvhololens, alldata, allhololens] = loadHololensData('./Vicon_session_2020_12_02/HoloLensRecording__2020_12_02__12_54_39/');
 indexes = vicom.Var4(:) ~= 1;
 
-%% --------------------------------
+
 figure();
 
 pcVicom = pointCloud([vicom.Var5(indexes), vicom.Var6(indexes), vicom.Var7(indexes)]);
@@ -22,59 +22,10 @@ title('Hololens and Vicom tracking before registration');
 legend('\color{white} Hololens', '\color{white} Vicon');
 
 
-besterr = realmax;
-bestax = 0;
-bestay = 0;
-bestaz = 0;
-bestrmse =0;
-R = diag([1 1 1]);
-res = cell(6,100);
-
-
-MdlICP = KDTreeSearcher(pcVicom.Location);
-
-for i = 1:100
-    ay = interp1([0,1],[0,360],rand(1));
-    az = interp1([0,1],[0,360],rand(1));
-    ax = interp1([0,1],[0,360],rand(1));
-
-
-    Rx = [1 0 0 0; 0 cos(ax) -sin(ax) 0; 0 sin(ax) cos(ax) 0; 0 0 0 1];
-    Ry = [cos(ay) 0 sin(ay) 0; 0 1 0 0; -sin(ay) 0 cos(ay) 0; 0 0 0 1];
-    Rz = [cos(az) -sin(az) 0 0; sin(az) cos(az) 0 0; 0 0 1 0; 0 0 0 1];
-
-    tmpR = Rx * Ry * Rz;
-
-    tform_rotate = affine3d(tmpR);
-    ptrotHolol = pctransform(pcHoloLens,tform_rotate);
-
-    [tform,tmphololensReg, rmse] = pcregrigid(ptrotHolol, pcVicom, 'MaxIterations', 100000, 'Tolerance', [0.001, 0.0009]);
-    [Idx, D] = knnsearch(MdlICP, tmphololensReg.Location);
-    err = sum(D);
-    
-    res{1, i} = ax;
-    res{2, i} = ay;
-    res{3, i} = az;
-    res{4, i} = err;
-    res{5, i} = tform;
-    res{6, i} = tmphololensReg;
-    
-    if err < besterr
-        besterr = err;
-        besttform = tform;
-        hololensReg = tmphololensReg;
-        bestax = ax;
-        bestay = ay;
-        bestaz = az;
-        bestrmse = rmse;
-        besttform_rotate = tform_rotate;
-        R = tmpR;
-        bestD = D;
-    end
-end
+resICP = optimizeICP(pcVicom, pcHoloLens);
 
 figure();
-pcshowpair(hololensReg, pcVicom, 'MarkerSize', 50);
+pcshowpair(resICP.hololensReg, pcVicom, 'MarkerSize', 50);
 axis equal;
 xlabel("x");
 ylabel("y");
@@ -96,7 +47,6 @@ initvals = [];
 pointclouds = cell(6,1);
 cs = cell(6,1);
 hol = cell(6,1);
-tform_rotate = affine3d(R);
 
 for i = 1:6
     if i == 6
@@ -527,24 +477,69 @@ plot3(pcptsM.Location(Idx, 1), pcptsM.Location(Idx, 2),  pcptsM.Location(Idx, 3)
 title('HoloLens and Matterport alignemnt using Vicon');
 %% -------------------------------------------------------------------------------------------
 function [vicom, pvhololens, alldata, allhololens] = loadHololensData(folder)
-vicom = readtable('./Vicon_session_2020_12_02/hololens_seq03.txt');
-pvhololens = readtable([folder, 'pv.csv']);
-useAllCameras = true;
+    vicom = readtable('./Vicon_session_2020_12_02/hololens_seq03.txt');
+    pvhololens = readtable([folder, 'pv.csv']);
+    useAllCameras = true;
 
-vlcll = readtable([folder, 'vlc_ll.csv']);
-vlclf = readtable([folder, 'vlc_lf.csv']);
-vlcrf = readtable([folder, 'vlc_rf.csv']);
-vlcrr = readtable([folder, 'vlc_rr.csv']);
-longthrowdepth = readtable([folder, 'long_throw_depth.csv']);
-allhololens = []'
+    vlcll = readtable([folder, 'vlc_ll.csv']);
+    vlclf = readtable([folder, 'vlc_lf.csv']);
+    vlcrf = readtable([folder, 'vlc_rf.csv']);
+    vlcrr = readtable([folder, 'vlc_rr.csv']);
+    longthrowdepth = readtable([folder, 'long_throw_depth.csv']);
 
-if useAllCameras
-   allhololens = [pvhololens; vlcll; vlclf; vlcrf; vlcrr; longthrowdepth];
-   allhololens = sortrows(pvhololens, 'Timestamp');
+    allhololens = [pvhololens; vlcll; vlclf; vlcrf; vlcrr; longthrowdepth];
+    allhololens = sortrows(pvhololens, 'Timestamp');
+
+
+    alldata = {pvhololens, vlcll, vlclf, vlcrf, vlcrr, longthrowdepth};
+
 end
 
-alldata = {pvhololens, vlcll, vlclf, vlcrf, vlcrr, longthrowdepth};
+function res = optimizeICP(pcVicom, pcHoloLens)
+    res.besterr = realmax;
+    res.bestax = 0;
+    res.bestay = 0;
+    res.bestaz = 0;
+    res.bestrmse =0;
+    res.R = diag([1 1 1]);
 
+
+    MdlICP = KDTreeSearcher(pcVicom.Location);
+
+    for i = 1:100
+        ay = interp1([0,1],[0,360],rand(1));
+        az = interp1([0,1],[0,360],rand(1));
+        ax = interp1([0,1],[0,360],rand(1));
+
+
+        Rx = [1 0 0 0; 0 cos(ax) -sin(ax) 0; 0 sin(ax) cos(ax) 0; 0 0 0 1];
+        Ry = [cos(ay) 0 sin(ay) 0; 0 1 0 0; -sin(ay) 0 cos(ay) 0; 0 0 0 1];
+        Rz = [cos(az) -sin(az) 0 0; sin(az) cos(az) 0 0; 0 0 1 0; 0 0 0 1];
+
+        tmpR = Rx * Ry * Rz;
+
+        tform_rotate = affine3d(tmpR);
+        ptrotHolol = pctransform(pcHoloLens,tform_rotate);
+
+        [tform,tmphololensReg, rmse] = pcregrigid(ptrotHolol, pcVicom, 'MaxIterations', 100000, 'Tolerance', [0.001, 0.0009]);
+        [Idx, D] = knnsearch(MdlICP, tmphololensReg.Location);
+        err = sum(D);
+
+        if err < res.besterr
+            res.besterr = err;
+            res.besttform = tform;
+            res.hololensReg = tmphololensReg;
+            res.bestax = ax;
+            res.bestay = ay;
+            res.bestaz = az;
+            res.bestrmse = rmse;
+            res.besttform_rotate = tform_rotate;
+            res.R = tmpR;
+            res.bestD = D;
+        end
+    end
+    
+    res.tform_rotate = affine3d(res.R);
 end
 
 
@@ -602,15 +597,15 @@ function R = euler2mat(e)
 end
 
 function drawCamera(C, R)
-cameraPointsInWorld = [[diag([1 1 -1]) * 0.05; [0 0 0]] ones(4,1)]; 
-p = zeros(4,3);
-for i = 1:4
-p(i,:) = (R * cameraPointsInWorld(i,1:3)' + C)';
-end
-hold on;
-plot3([p(4, 1), p(1, 1)], [p(4, 2), p(1, 2)], [p(4, 3), p(1, 3)], 'r', 'LineWidth', 1);
-plot3([p(4, 1), p(2, 1)], [p(4, 2), p(2, 2)], [p(4, 3), p(2, 3)], 'g', 'LineWidth', 1);
-plot3([p(4, 1), p(3, 1)], [p(4, 2), p(3, 2)], [p(4, 3), p(3, 3)], 'b', 'LineWidth', 1);
+    cameraPointsInWorld = [[diag([1 1 -1]) * 0.05; [0 0 0]] ones(4,1)]; 
+    p = zeros(4,3);
+    for i = 1:4
+        p(i,:) = (R * cameraPointsInWorld(i,1:3)' + C)';
+    end
+    hold on;
+    plot3([p(4, 1), p(1, 1)], [p(4, 2), p(1, 2)], [p(4, 3), p(1, 3)], 'r', 'LineWidth', 1);
+    plot3([p(4, 1), p(2, 1)], [p(4, 2), p(2, 2)], [p(4, 3), p(2, 3)], 'g', 'LineWidth', 1);
+    plot3([p(4, 1), p(3, 1)], [p(4, 2), p(3, 2)], [p(4, 3), p(3, 3)], 'b', 'LineWidth', 1);
 end
 
 
