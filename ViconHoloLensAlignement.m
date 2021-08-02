@@ -2,52 +2,10 @@ croppingStart = 0;
 croppingEnd = 100;
 Binit = 0;
 BMax = 100;
-%folder = './Vicon_session_2020_12_02/HoloLensRecording__2020_12_02__12_57_18/';
-folder = './Vicon_session_2020_12_02/HoloLensRecording__2020_12_02__12_54_39/';
-vicom = readtable('./Vicon_session_2020_12_02/hololens_seq03.txt');
-pvhololens = readtable([folder, 'pv.csv']);
-useAllCameras = true;
 
-vlcll = readtable([folder, 'vlc_ll.csv']);
-vlclf = readtable([folder, 'vlc_lf.csv']);
-vlcrf = readtable([folder, 'vlc_rf.csv']);
-vlcrr = readtable([folder, 'vlc_rr.csv']);
-longthrowdepth = readtable([folder, 'long_throw_depth.csv']);
-
-if useAllCameras
-   allhololens = [pvhololens; vlcll; vlclf; vlcrf; vlcrr; longthrowdepth];
-   allhololens = sortrows(pvhololens, 'Timestamp');
-end
-
-
-Xmin = 1.316;
-Xmax = 1.445;
-Ymin = -1.2105;
-Ymax = -1.145;
-Zmin = 1.212;
-Zmax = 1.275;
-%pri zmene sekvence se musi zmenit i folder dole!
-
-
-% croppingStart = 100;
-% croppingEnd = 0;
-% Binit = 90;
-% BMax = 150;
-% vicom = readtable('./Vicom_2020_08_20/2020_08_20_Vicon_HoloLens_Session/seq1.txt');
-% pvhololens = readtable('./Vicom_2020_08_20/HoloLensRecording__2020_08_20__08_36_27/pv.csv');
-% folder = './Vicom_2020_08_20/HoloLensRecording__2020_08_20__08_36_27/';
-
-
+[vicom, pvhololens, alldata, allhololens] = loadHololensData('./Vicon_session_2020_12_02/HoloLensRecording__2020_12_02__12_54_39/');
 indexes = vicom.Var4(:) ~= 1;
 
-%% --------------- Odstraneni chyb
-% for i = 1:size(vicom,1)
-%     if vicom.Var5(i) > Xmin && vicom.Var5(i) < Xmax && vicom.Var6(i) > Ymin && vicom.Var6(i) < Ymax && vicom.Var7(i) > Zmin && vicom.Var7(i) < Zmax 
-%         indexes(i) = 0;        
-%     end
-%     
-%     
-% end
 %% --------------------------------
 figure();
 
@@ -61,9 +19,9 @@ xlabel("x");
 ylabel("y");
 zlabel("z");
 title('Hololens and Vicom tracking before registration');
+legend('\color{white} Hololens', '\color{white} Vicon');
 
 
-%ax = 269;
 besterr = realmax;
 bestax = 0;
 bestay = 0;
@@ -92,9 +50,6 @@ for i = 1:100
 
     [tform,tmphololensReg, rmse] = pcregrigid(ptrotHolol, pcVicom, 'MaxIterations', 100000, 'Tolerance', [0.001, 0.0009]);
     [Idx, D] = knnsearch(MdlICP, tmphololensReg.Location);
-    %groups = kmeans(D, 2); %nemusi se vubec definovat, nebo mean(res) a mean(res) * 100
-    %idxmin = groups(D == min(D));
-    %err = sum(D(groups == idxmin));
     err = sum(D);
     
     res{1, i} = ax;
@@ -112,36 +67,11 @@ for i = 1:100
         bestay = ay;
         bestaz = az;
         bestrmse = rmse;
+        besttform_rotate = tform_rotate;
         R = tmpR;
         bestD = D;
     end
-% figure();
-% pcshowpair(tmphololensReg, pcVicom, 'MarkerSize', 50);
-% axis equal;
-% xlabel("x");
-% ylabel("y");
-% zlabel("z");
-% title(['Registered Hololens tracking and Vicom tracking, ax = ', num2str(ax), ', ay = ', num2str(ay), ', az = ', num2str(az), ' rmse = ', num2str(rmse)]);
-
 end
-
-% allerrs = [res{4,:}];
-% allerrs = round(allerrs, 5);
-% [GC, GR] = groupcounts(allerrs');
-% err = GR(GC == max(GC));
-% err_indexes = find(allerrs == err);
-% 
-% ax = res{1,err_indexes(1)};
-% ay = res{2,err_indexes(1)};
-% az = res{3,err_indexes(1)};
-% tform = res{5,err_indexes(1)};
-% hololensReg = res{6,err_indexes(1)};
-
-% Rx = [1 0 0 0; 0 cos(ax) -sin(ax) 0; 0 sin(ax) cos(ax) 0; 0 0 0 1];
-% Ry = [cos(ay) 0 sin(ay) 0; 0 1 0 0; -sin(ay) 0 cos(ay) 0; 0 0 0 1];
-% Rz = [cos(az) -sin(az) 0 0; sin(az) cos(az) 0 0; 0 0 1 0; 0 0 0 1];
-
-% R = Rx * Ry * Rz;
 
 figure();
 pcshowpair(hololensReg, pcVicom, 'MarkerSize', 50);
@@ -150,7 +80,8 @@ xlabel("x");
 ylabel("y");
 zlabel("z");
 title(['Registered Hololens tracking and Vicom tracking, ax = ', num2str(ax), ', ay = ', num2str(ay), ', az = ', num2str(az)]);
-tform_rotate = affine3d(R);
+legend('\color{white} Hololens', '\color{white} Vicon');
+
 %% --------------------------------------------------------------
 
 numHolol = size(pvhololens,1);
@@ -160,7 +91,7 @@ params = [];
 vals = [];
 initvals = [];
 
-alldata = {pvhololens, vlcll, vlclf, vlcrf, vlcrr, longthrowdepth};
+
 
 pointclouds = cell(6,1);
 cs = cell(6,1);
@@ -181,13 +112,8 @@ for i = 1:6
     
     end
 end
-%hol = hololensReg.Location;
-minB = 0;
 
-% timediff = pvhololens.Timestamp(2 + croppingStart:end - croppingEnd) - pvhololens.Timestamp(1 + croppingStart:end - croppingEnd -1);
-% timediff = timediff / 10^7;
-% cs = cumsum([0; timediff]);
-% cs  = round(cs * 100) + 1;
+minB = 0;
 
 for B = Binit:BMax 
     vic = cell(6,1);
@@ -237,126 +163,7 @@ end
 fprintf(['Best B is ', num2str(minB), ' the optimized value is ',  num2str(minval),' parameters are:', '\n' ]);
 minpar
 
-%% --------------------------------Commented because for all camera this doesn't make sense-----------------------------------------------------------
-% %pcVicom = pointCloud(vic);
-% holtrans = zeros(hololensReg.Count, 3);
-% hol2vicon = zeros(hololensReg.Count, 3);
-% j = uint64(cs + minB); 
-% vic = pcVicom.Location(j, :);
-% 
-% Rvic = ViconRot(j, :);
-% 
-% for i = 1:hololensReg.Count
-%     holtrans(i,:) = (euler2mat([minpar(5) minpar(6) minpar(7)])' * ((1/minpar(4)) * hol(i,:)') - [minpar(8) minpar(9) minpar(10)]')'; %+ Rvic * t cary jinou barvou;
-%     hol2vicon(i, :) = (holtrans(i, :)' + euler2mat(Rvic(i, :)) * [minpar(1) minpar(2) minpar(3)]')';
-% end
-% 
-% pcHol = pointCloud(holtrans);
-% %% ---------------------------------------------------------------------------
-% 
-% 
-% 
-% 
-% figure();
-% %%
-% 
-% pcshowpair(pcHol, pcVicom, 'MarkerSize', 50);
-% axis equal;
-% xlabel("x");
-% ylabel("y");
-% zlabel("z");
-% title('Registered Hololens tracking and Vicom tracking after tuning');
-% 
-% %%
-% hold on;
-% %kresleni car
-% 
-% cmatrix = ones(size(hol2vicon)).*[0 1 1];
-% pcHol2Vicon = pointCloud(hol2vicon, 'Color', cmatrix);
-% pcshow(pcHol2Vicon, 'MarkerSize', 50);
-% hold on;
-% 
-% for i = 1:hololensReg.Count
-%     plot3([vic(i, 1), holtrans(i,1)], [vic(i, 2), holtrans(i,2)], [vic(i, 3), holtrans(i,3)], 'w');
-%     plot3([vic(i, 1), hol2vicon(i,1)], [vic(i, 2), hol2vicon(i,2)], [vic(i, 3), hol2vicon(i,3)], 'r');
-% end
-% 
-% 
-% legend('\color{white} Transformed HoloLens (without Rvic * t)','\color{white} Vicon', '\color{white} Transformed Hololens (with Rvic * t)', '\color{white} Error between HoloLens without Rvic * t and Vicon', '\color{white} Error between HoloLens with Rvic * t and Vicon');
-% 
-% 
-% %%
-% figure();
-% plot(Binit:BMax , vals, 'b', Binit:BMax , initvals, 'r');
-% 
-% holCheck = pcHoloLens.Location;
-% 
-% rho = minpar(4);
-% St = euler2mat([minpar(5) minpar(6) minpar(7)])';
-% Rii = R(1:3, 1:3) * tform.Rotation;
-% T = St * tform.Translation' - [minpar(8) minpar(9) minpar(10)]';
-% 
-% for i = 1:hololensReg.Count
-%     holCheck(i,:) = 1/rho * St *  (holCheck(i,:) * Rii)' + T;
-% end
-% 
-% pcHolCheck = pointCloud(holCheck);
-% 
-% figure();
-% pcshowpair(pcHolCheck, pcVicom, 'MarkerSize', 50);
-% axis equal;
-% xlabel("x");
-% ylabel("y");
-% zlabel("z");
-% title('Registered Hololens tracking and Vicom tracking after tuning');
-% 
-% 
-% %%
-% hold on;
-% 
-% plot3(vic(:, 1), vic(:, 2), vic(:, 3), 'ro');
-% 
-% %% ------------------- IN MATTERPORT
-% pcMatterport = pcread('D:/Documents/Work/B-315/matterport2vicon.ply');
-% figure();
-% 
-% pcshowpair(pcHolCheck, pcVicom, 'MarkerSize', 50);
-% hold on;
-% pcshow(pcMatterport, 'MarkerSize', 50);
-% axis equal;
-% xlabel("x");
-% ylabel("y");
-% zlabel("z");
-% title('Transformed HoloLens and Vicon data in transformed Matterport data');
-% legend('\color{white} Transformed HoloLens','\color{white} Vicon', '\color{white} Matterport');
-% 
-% %% ------------------------ graphs/histograms
-% 
-% errorHolTrans = sum((holtrans - vic).^2, 2);
-% errorHol2Vicon = sum((hol2vicon - vic).^2, 2);
-% 
-% figure()
-% hold on;
-% grid on;
-% xlabel("pose id");
-% ylabel("error (m)");
-% 
-% plot(errorHolTrans);
-% plot(errorHol2Vicon);
-% title('Graph of errors');
-% legend('Transformed HoloLens (without Rvic * t)','Transformed HoloLens (with Rvic * t)');
-% 
-% 
-% figure()
-% hold on;
-% grid on;
-% xlabel("error (m)");
-% ylabel("number of occurence");
-% histogram(errorHolTrans);
-% histogram(errorHol2Vicon);
-% 
-% title('Histogram of errors');
-% legend('Transformed HoloLens (without Rvic * t)','Transformed HoloLens (with Rvic * t)');
+
 %% ------- Grafy
 figure();
 plot(Binit:BMax , vals, 'b', Binit:BMax , initvals, 'r');
@@ -371,6 +178,7 @@ t = [[minpar(1) minpar(2) minpar(3)]' ...
 [minpar(10) minpar(11) minpar(12)]' ...
 [minpar(13) minpar(14) minpar(15)]' ...
 [minpar(16) minpar(17) minpar(18)]'];
+errs = [];
 
 for m = 1:6
 
@@ -384,7 +192,7 @@ victrans = zeros(size(hol{m},1), 3);
 Rvic = ViconRot(j, :);
 
 for i = 1:size(hol{m},1)
-    holtrans = St * ((1/rho) * hol{m}(i,:)') + d; 
+    holtrans = St * ((1/rho) * hol{m}(i,:)') - d; 
     hol2vicon(i, :) = (holtrans)';
     victrans(i, :) = (vic(i, :)' + euler2mat(Rvic(i, :)) * t(:,m))';
 end
@@ -411,13 +219,19 @@ title(['Registered Hololens tracking and Vicom tracking after tuning for ', num2
 pcshowpair(pcHol, pcVicom, 'MarkerSize', 50);
 hold on;
 
-for i = 1:pcHol.Count
-    plot3([victrans(i, 1), hol2vicon(i,1)], [victrans(i, 2), hol2vicon(i,2)], [victrans(i, 3), hol2vicon(i,3)], 'r');
-end
-hold on;
-pcshow(pointCloud(hol{m}), 'MarkerSize', 50);
+pcshow(pointCloud(hol{m}, 'Color', repmat([1 1 0], length(hol{m}),1)), 'MarkerSize', 50);
 pcshow(pointCloud(victrans, 'Color', repmat([0 1 1], length(victrans), 1)),'MarkerSize', 50);
-legend('\color{white} Transformed HoloLens','\color{white} Vicon', '\color{white} Error between HoloLens' , '\color{white} Hololens before tuning', '\color{white} Shifted Vicon');
+hold on;
+
+for i = 1:pcHol.Count
+    if(norm(victrans(i,:) - hol2vicon(i,:)) < 0.2)
+        errs = [errs norm(victrans(i,:) - hol2vicon(i,:))];
+        plot3([victrans(i, 1), hol2vicon(i,1)], [victrans(i, 2), hol2vicon(i,2)], [victrans(i, 3), hol2vicon(i,3)], 'r');
+    end
+end
+
+legend('\color{white} Transformed HoloLens','\color{white} Vicon', '\color{white} Hololens before tuning', '\color{white} Shifted Vicon', '\color{white} Error between HoloLens');
+title(['Registered Hololens tracking and Vicom tracking after tuning for ', num2str(m), 'th camera']);
 
 dist = vecnorm((victrans - hol2vicon)');
 distgroups = kmeans(dist', 2);
@@ -428,22 +242,19 @@ hol2viccorr{m} = victrans - hol2vicon;
 
 end
 
-
+figure();
+plot(sort(errs));
+xlabel("err id");
+ylabel("error[m]");
+title('All errors between aligned HoloLens and Vicon');
 
 %% ------------               -------- Depth data
 
 files=dir([folder, 'long_throw_depth/']);
 depthposes = readtable([folder, 'long_throw_depth.csv']);
 depthposes(1,:) = [];
-% figure();
-% hold on;
-% grid on;
-% xlabel("x");
-% ylabel("y");
-% zlabel("z");
-% title('HoloLens Depth Data pointclouds');
+
 pcMatterport = pcread('D:/Documents/Work/B-315/matterport2vicon.ply');
-% pcshow(pcMatterport, 'MarkerSize', 50);
 pointclouds_depth = {};
 
 ind = 1;
@@ -456,10 +267,8 @@ vic = pcVicom.Location(j, :);
 Rii = R(1:3, 1:3) * besttform.Rotation;
 T = St * besttform.Translation' - d; % mozna -d mozna +d
 qi = [0 0 0 0];
-
-
-%     holtrans(i,:) = (euler2mat([minpar(5) minpar(6) minpar(7)])' * ((1/minpar(4)) * hol(i,:)') - [minpar(8) minpar(9) minpar(10)]')'; %+ Rvic * t cary jinou barvou;
-%     hol2vicon(i, :) = (holtrans(i, :)' + euler2mat(Rvic(i, :)) * [minpar(1) minpar(2) minpar(3)]')';
+allqs = [];
+figure();
 
 for i = 1:length(files)
    if ~startsWith(files(i).name, 'world_') && endsWith(files(i).name, '.ply') && ~endsWith(files(i).name,'_transf.ply')
@@ -484,46 +293,36 @@ for i = 1:length(files)
                               row.CameraViewTransform_m31 row.CameraViewTransform_m32 row.CameraViewTransform_m33 row.CameraViewTransform_m34;
                               row.CameraViewTransform_m41 row.CameraViewTransform_m42 row.CameraViewTransform_m43 row.CameraViewTransform_m44];
       
-%        cameraPoints = [[diag([1 1 1]) * 0.3; [0 0 0]] ones(4,1)];              
-%        transformedCamPoints = zeros(5,3);
-%        Rit = [[Rii'; 0 0 0] [0; 0; 0; 1]];
-%        CamTran = [[inv(CameraViewTransform(1:3, 1:3));0 0 0] [0; 0; 0; 1]];
-%        F2O = [[FrameToOrigin(1:3, 1:3);0 0 0] [0; 0; 0; 1]];
-%        
-%        D2C = inv(CameraViewTransform)';
-%        C2D = inv(D2C);
-%        translation = [FrameToOrigin(4,1) -FrameToOrigin(4,2) -FrameToOrigin(4,3) FrameToOrigin(4,4)]; %+ CameraViewTransform(4,:);
 
         C2D = inv(CameraViewTransform)';
         D2C = inv(C2D);
         D2O = FrameToOrigin'; 
         O2D = inv(D2O);
-        Rhi = D2O(1:3, 1:3) * C2D(1:3, 1:3);
+        Rhi = D2O * C2D;
         
-%        for m = 1:4
-%           cameraPoints(m, :) =  (D2C * cameraPoints(m, :)')' + translation;
-%        end
-%        drawCamera(transformedCamPoints);
-  
-       %text(transformedCamPoints(1,1), transformedCamPoints(1,2), transformedCamPoints(1,3), parsed{1});
+        oldRhi = Rhi(1:3, 1:3);
+        mChw = oldRhi' * Rhi(1:3,4);
+
        pcdepth = pcread([folder, 'long_throw_depth/', name]);
        depthdata = pcdepth.Location / -1000;
        pcdepth = pointCloud(depthdata);
        corrections = hol2viccorr{6};
        %pcdepth = pctransform(pctransform(pcdepth,tform_rotate), besttform); % timhle se zbavime Rii
-       %cmatrix = ones(size(depthdata)) .* cols{i};
-       %cmatrix = ones(size(depthdata)) .* [0 1 0];
-       %Rx = [1 0 0 0; 0 cos(pi) -sin(pi) 0; 0 sin(pi) cos(pi) 0; 0 0 0 1];
-       %Rx3 = [1 0 0; 0 cos(pi) -sin(pi); 0 sin(pi) cos(pi)];
        if(norm(corrections(rowindex,:)) < 0.2)
-           Rhv = St * Rii' * Rhi;
-           Rv = euler2mat(Rvic(rowindex,:));
-           qdelta = r2q(Rhv * Rv'); 
+           Rv2Rvm = euler2mat(Rvic(rowindex,:));
+           Rhv = St * Rii' * oldRhi;
+           Rdelta = Rhv * Rv';
+           qdelta = r2q(Rdelta); 
+           allqs = [allqs qdelta];
+           allRs{ind} =  Rdelta;
            qi = qi + qdelta;
 
-           Rdelta = q2r(qdelta);
-           % chceme, aby platilo Rhv = Rdelta * Rv;
+           Rhv_star = Rdelta * Rv';
            
+           Rstar_test = Rv' * St * Rii' * oldRhi';
+           Rstarq{ind} = r2q(Rstar_test);
+           % chceme, aby platilo Rhv = Rdelta * Rv';
+%            drawCamera(-mChw, Rhv_star);
            for k = 1:pcdepth.Count
                % depthdata to hololens world coordinates
                tmp = ((D2O) * (C2D) * [depthdata(k,:) 1]')'; 
@@ -557,7 +356,12 @@ for i = 1:length(files)
        end
    end
 end
-
+%%
+figure();
+for i = 1:length(Rvic)
+    drawCamera(vic(i,:)', euler2mat(Rvic(i,:)))
+end
+axis equal;
 %%
 
 %Qstar = qi / (ind - 1);
@@ -597,7 +401,8 @@ pcptsH = pointCloud(ptsH(1:20:end, :));
 
 pcshowpair(pcptsH, pcptsM, 'MarkerSize', 50);
 
-Mdl = KDTreeSearcher(pcptsM.Location)
+Mdl = KDTreeSearcher(pcptsM.Location);
+% %
 % [tform,hololFixed] = pcregrigid(pcptsH, pcptsM, 'MaxIterations', 10000, 'Verbose', true, 'Tolerance', [0.0001, 0.00009]);
 % figure();
 % pcshowpair(hololFixed, pcptsM, 'MarkerSize', 50);
@@ -622,8 +427,8 @@ Mdl = KDTreeSearcher(pcptsM.Location)
 % histogram(DICP,100);
 % title('Distances tuned vs tuned and ICP');
 % legend('D', 'D ICP');
-% 
-% 
+% % 
+% % 
 figure();
 pcshowpair(pcptsH, pcptsM, 'MarkerSize', 50);
 hold on;
@@ -631,45 +436,14 @@ hold on;
 [Idx, D] = knnsearch(Mdl, pcptsH.Location);
 
 plot3(pcptsM.Location(Idx, 1), pcptsM.Location(Idx, 2),  pcptsM.Location(Idx, 3), 'or');
-title('HoloLens and Matterport alignemnt without ICP');
+title('HoloLens and Matterport alignemnt depth PC  after tuning');
 
+figure();
+plot(sort(D));
+xlabel('Err id');
+ylabel('Error [m]');
+title('HoloLens and Matterport depth PC alignemnt errors after tuning');
 %%
-
-% %% -------------------------------- Porovnani timestampu -------------------------------------
-% pvTimestamps = pvhololens.Timestamp(croppingStart+1:end-croppingEnd);
-% viconTimestamps = vicom.Var1(indexes);
-% viconMatchedTimestamps = viconTimestamps(j);
-% depthTimestamps = depthposes.Timestamp;
-% 
-% figure();
-% plot(pvTimestamps, '.');
-% grid on;
-% title("PV timestamps");
-% 
-% 
-% figure();
-% plot(viconTimestamps, '.');
-% grid on;
-% title("Original Vicon timestamps");
-% 
-% figure();
-% plot(viconMatchedTimestamps, '.');
-% grid on;
-% title("Vicon timestamps matched to PV");
-% 
-% figure();
-% plot(depthTimestamps, '.');
-% grid on;
-% title("Long throw depth timestamps");
-% 
-% 
-% figure();
-% plot(pvTimestamps, viconMatchedTimestamps);
-% grid on;
-% title("Mapping of Vicon timestamp to PV timestamps");
-% xlabel("PV timestamps");
-% ylabel("Mapped Vicon Timestamps");
-
 
 count = 1;
 
@@ -706,27 +480,23 @@ for i = 1:length(files)
         Rhi = D2O * C2D;
         oldRhi = Rhi(1:3, 1:3);
         mChw = oldRhi' * Rhi(1:3,4);
-        Rhi = [Rstar * euler2mat(Rvic(rowindex,:)) Rstar * euler2mat(Rvic(rowindex,:)) * mChw; 0 0 0 1];
+        Rv = euler2mat(Rvic(rowindex,:));
         
+        %Rhi = [Rstar * euler2mat(Rvic(rowindex,:)) Rstar * euler2mat(Rvic(rowindex,:)) * mChw; 0 0 0 1];
+        Rhv_star = Rstar * Rv;
         corrections = hol2viccorr{6};
         
        for k = 1:pcdepth.Count
                           % depthdata to hololens world coordinates
-               tmp = (Rhi * [depthdata(k,:) 1]')'; 
-               %tmp = Rii * St' * tmp(1:3)';
+               tmp = (Rhi * [depthdata(k,:) 1]')';
 
-               % hololens world -> 
-               %tmp = (1/rho * St *  (tmp(1:3) * Rii)') + T + euler2mat(Rvic(rowindex,:)) * t(:,6) + corrections(rowindex,:)';
-
-           tmp =  1/rho * tmp(1:3) + T + euler2mat(Rvic(rowindex,:)) * t(:,6) + corrections(rowindex,:)';
+               % hololens world -> vicon
+               tmp = (1/rho * St *  (tmp(1:3) * Rii)') + T + euler2mat(Rvic(rowindex,:)) * t(:,6) + corrections(rowindex,:)';
+           %tmp = 1/rho * Rhv_star * (depthdata(k,:)' + mChw) + T + euler2mat(Rv) * t(:,6) + corrections(rowindex,:)'
+           %tmp =  1/rho * tmp(1:3) + T + euler2mat(Rvic(rowindex,:)) * t(:,6) + corrections(rowindex,:)';
            depthdata(k, :) = [tmp(1) tmp(2) tmp(3)];
        end
-%        pcdepth1 = pctransform(pointCloud(depthdata), tform_rotate);
-%        pcdepth2 = pctransform(pcdepth1,tform);
-%        xyz = pcdepth2.Location;
-%        for k = 1:pcdepth2.Count
-%            xyz(k, :) = 
-%        end
+
        cmatrix = ones(pcdepth.Count, 1) * cols{i};   
        pcdepthtransformed = pointCloud(depthdata(1:1000:end, :), 'Color', cmatrix(1:1000:end, :));
 %        pcshow(pcdepthtransformed, 'MarkerSize', 50);
@@ -756,6 +526,28 @@ hold on;
 plot3(pcptsM.Location(Idx, 1), pcptsM.Location(Idx, 2),  pcptsM.Location(Idx, 3), 'or');
 title('HoloLens and Matterport alignemnt using Vicon');
 %% -------------------------------------------------------------------------------------------
+function [vicom, pvhololens, alldata, allhololens] = loadHololensData(folder)
+vicom = readtable('./Vicon_session_2020_12_02/hololens_seq03.txt');
+pvhololens = readtable([folder, 'pv.csv']);
+useAllCameras = true;
+
+vlcll = readtable([folder, 'vlc_ll.csv']);
+vlclf = readtable([folder, 'vlc_lf.csv']);
+vlcrf = readtable([folder, 'vlc_rf.csv']);
+vlcrr = readtable([folder, 'vlc_rr.csv']);
+longthrowdepth = readtable([folder, 'long_throw_depth.csv']);
+allhololens = []'
+
+if useAllCameras
+   allhololens = [pvhololens; vlcll; vlclf; vlcrf; vlcrr; longthrowdepth];
+   allhololens = sortrows(pvhololens, 'Timestamp');
+end
+
+alldata = {pvhololens, vlcll, vlclf, vlcrf, vlcrr, longthrowdepth};
+
+end
+
+
 function res = closerTransformation(t, rho, S, d, C, Rv, D)
 %     C-known
 %     R(e)-known
@@ -809,7 +601,12 @@ function R = euler2mat(e)
 
 end
 
-function drawCamera(p)
+function drawCamera(C, R)
+cameraPointsInWorld = [[diag([1 1 -1]) * 0.05; [0 0 0]] ones(4,1)]; 
+p = zeros(4,3);
+for i = 1:4
+p(i,:) = (R * cameraPointsInWorld(i,1:3)' + C)';
+end
 hold on;
 plot3([p(4, 1), p(1, 1)], [p(4, 2), p(1, 2)], [p(4, 3), p(1, 3)], 'r', 'LineWidth', 1);
 plot3([p(4, 1), p(2, 1)], [p(4, 2), p(2, 2)], [p(4, 3), p(2, 3)], 'g', 'LineWidth', 1);
