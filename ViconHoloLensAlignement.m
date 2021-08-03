@@ -1,18 +1,19 @@
 croppingStart = 0;
 croppingEnd = 100;
 Binit = 0;
-BMax = 100;
+Bmax = 100;
+numOfCameras = 6;
 
-[vicom, pvhololens, alldata, allhololens] = loadHololensData('./Vicon_session_2020_12_02/HoloLensRecording__2020_12_02__12_54_39/');
-indexes = vicom.Var4(:) ~= 1;
+[vicon, pvhololens, alldata, allhololens] = loadHololensData('./Vicon_session_2020_12_02/HoloLensRecording__2020_12_02__12_54_39/', './Vicon_session_2020_12_02/hololens_seq03.txt');
+indexes = vicon.Var4(:) ~= 1;
 
 
 figure();
 
-pcVicom = pointCloud([vicom.Var5(indexes), vicom.Var6(indexes), vicom.Var7(indexes)]);
-ViconRot = [vicom.Var5(indexes), vicom.Var6(indexes), vicom.Var7(indexes)];
+pcVicon = pointCloud([vicon.Var5(indexes), vicon.Var6(indexes), vicon.Var7(indexes)]);
+ViconRot = [vicon.Var5(indexes), vicon.Var6(indexes), vicon.Var7(indexes)];
 pcHoloLens = pointCloud([allhololens.Position_X(croppingStart+1:end-croppingEnd), allhololens.Position_Y(croppingStart+1:end-croppingEnd), allhololens.Position_Z(croppingStart+1:end-croppingEnd)]);
-pcshowpair(pcHoloLens, pcVicom, 'MarkerSize', 50);
+pcshowpair(pcHoloLens, pcVicon, 'MarkerSize', 50);
 
 axis equal;
 xlabel("x");
@@ -22,173 +23,85 @@ title('Hololens and Vicom tracking before registration');
 legend('\color{white} Hololens', '\color{white} Vicon');
 
 
-resICP = optimizeICP(pcVicom, pcHoloLens);
+resICP = optimizeICP(pcVicon, pcHoloLens);
 
 figure();
-pcshowpair(resICP.hololensReg, pcVicom, 'MarkerSize', 50);
+pcshowpair(resICP.hololensReg, pcVicon, 'MarkerSize', 50);
 axis equal;
 xlabel("x");
 ylabel("y");
 zlabel("z");
-title(['Registered Hololens tracking and Vicom tracking, ax = ', num2str(ax), ', ay = ', num2str(ay), ', az = ', num2str(az)]);
+title(['Registered Hololens tracking and Vicom tracking, ax = ', num2str(resICP.bestax), ', ay = ', num2str(resICP.bestay), ', az = ', num2str(resICP.bestaz)]);
 legend('\color{white} Hololens', '\color{white} Vicon');
 
 %% --------------------------------------------------------------
 
 numHolol = size(pvhololens,1);
-numVicom = size(vicom,1);
-
-params = [];
-vals = [];
-initvals = [];
+numVicon = size(vicon,1);
 
 
 
-pointclouds = cell(6,1);
-cs = cell(6,1);
-hol = cell(6,1);
 
-for i = 1:6
-    if i == 6
-        pointclouds{i} = pointCloud([alldata{i}.Position_X(2:end), alldata{i}.Position_Y(2:end), alldata{i}.Position_Z(2:end)]);
-        pointclouds{i} = pctransform(pctransform(pointclouds{i},tform_rotate), besttform);
-        hol{i} = pointclouds{i}.Location;
-        cs{i} = round((alldata{i}.Timestamp(2:end) - min(alldata{1}.Timestamp)) /10^5) + 1;
-    else
-        pointclouds{i} = pointCloud([alldata{i}.Position_X, alldata{i}.Position_Y, alldata{i}.Position_Z]);
-        pointclouds{i} = pctransform(pctransform(pointclouds{i},tform_rotate), besttform);
-        hol{i} = pointclouds{i}.Location;
-        cs{i} = round((alldata{i}.Timestamp - min(alldata{1}.Timestamp)) /10^5) + 1;
-    
-    end
-end
+allpointclouds = createPointclouds(alldata, numOfCameras, resICP.besttform, resICP.besttform_rotate);
 
-minB = 0;
-
-for B = Binit:BMax 
-    vic = cell(6,1);
-    Rvic = cell(6,1);
-    vicsize = size(pcVicom.Location, 1);
-    for k = 1:6
-        i = cs{k} + B; 
-        i(i > vicsize) = [];
-        vic{k} = pcVicom.Location(i, :);
-        Rvic{k} = ViconRot(i, :);
-    end
-    
-    fun = @(par)closerTransformation([[par(1) par(2) par(3)]', [par(4) par(5) par(6)]', ...
-    [par(7) par(8) par(9)]', [par(10) par(11) par(12)]', [par(13) par(14) par(15)]', ...
-    [par(16) par(17) par(18)]'], par(19), euler2mat([par(20) par(21) par(22)]), [par(23) par(24) par(25)]', ...
-    vic, Rvic, hol);
-    initpar = [0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0];
-    options = optimset( 'MaxFunEvals', 1000 * 25);
-    %fun(initpar);
-    [bestpar, bestval] = fminsearch(fun, initpar, options);
-    
-    %t, rho, S, d, C, R, D
-    initvals = [initvals closerTransformation([[initpar(1) initpar(2) initpar(3)]', [initpar(4) initpar(5) initpar(6)]', ...
-        [initpar(7) initpar(8) initpar(9)]', [initpar(10) initpar(11) initpar(12)]', [initpar(13) initpar(14) initpar(15)]', ...
-        [initpar(16) initpar(17) initpar(18)]'], initpar(19), euler2mat([initpar(20) initpar(21) initpar(22)]), [initpar(23) initpar(24) initpar(25)]', vic, Rvic, hol)];
-    
-    params = [params bestpar];
-    vals = [vals bestval];
-    
-    if B == Binit
-      minpar = bestpar;
-      minval = bestval;
-      minB = B;
-    end
-    
-    if bestval < minval
-      minpar = bestpar;
-      minval = bestval; 
-      minB = B;
-    end
-    fprintf(['For B = ', num2str(B), ' the optimized value is ',  num2str(bestval),' parameters are:', '\n' ]);
-    bestpar
-    
-    %t, rho, S, d, C, R, D
-end
-
-fprintf(['Best B is ', num2str(minB), ' the optimized value is ',  num2str(minval),' parameters are:', '\n' ]);
-minpar
-
+optimizedPars = optimizeAlignmentTuning(Binit, Bmax, pcVicon, ViconRot, allpointclouds);
 
 %% ------- Grafy
 figure();
-plot(Binit:BMax , vals, 'b', Binit:BMax , initvals, 'r');
+plot(Binit:Bmax , optimizedPars.vals, 'b', Binit:Bmax , optimizedPars.initvals, 'r');
 legend('Optimized function value', 'Initial function value');
 
-St = euler2mat([minpar(20) minpar(21) minpar(22)])';
-rho = minpar(19);
-d = [minpar(23) minpar(24) minpar(25)]';
-t = [[minpar(1) minpar(2) minpar(3)]' ...
-[minpar(4) minpar(5) minpar(6)]' ...
-[minpar(7) minpar(8) minpar(9)]' ...
-[minpar(10) minpar(11) minpar(12)]' ...
-[minpar(13) minpar(14) minpar(15)]' ...
-[minpar(16) minpar(17) minpar(18)]'];
 errs = [];
 
-for m = 1:6
+for m = 1:numOfCameras
 
-hol2vicon = zeros(size(hol{m},1), 3);
+    hol2vicon = zeros(size(allpointclouds.hol{m},1), 3);
 
-j = cs{m} + minB; 
-j(j > pcVicom.Count) = [];
-vic = pcVicom.Location(j, :);
-victrans = zeros(size(hol{m},1), 3);
- 
-Rvic = ViconRot(j, :);
+    j = allpointclouds.cs{m} + optimizedPars.minB; 
+    j(j > pcVicon.Count) = [];
+    vic = pcVicon.Location(j, :);
+    victrans = zeros(size(allpointclouds.hol{m},1), 3);
 
-for i = 1:size(hol{m},1)
-    holtrans = St * ((1/rho) * hol{m}(i,:)') - d; 
-    hol2vicon(i, :) = (holtrans)';
-    victrans(i, :) = (vic(i, :)' + euler2mat(Rvic(i, :)) * t(:,m))';
-end
+    Rvic = ViconRot(j, :);
 
-pcHol = pointCloud(hol2vicon);
- 
-figure();
-
-pcshowpair(pcHol, pcVicom, 'MarkerSize', 50);
-axis equal;
-xlabel("x");
-ylabel("y");
-zlabel("z");
-title(['Registered Hololens tracking and Vicom tracking after tuning for ', num2str(m), 'th camera']);
-
-
-
-figure();
-axis equal;
-xlabel("x");
-ylabel("y");
-zlabel("z");
-title(['Registered Hololens tracking and Vicom tracking after tuning for ', num2str(m), 'th camera']);
-pcshowpair(pcHol, pcVicom, 'MarkerSize', 50);
-hold on;
-
-pcshow(pointCloud(hol{m}, 'Color', repmat([1 1 0], length(hol{m}),1)), 'MarkerSize', 50);
-pcshow(pointCloud(victrans, 'Color', repmat([0 1 1], length(victrans), 1)),'MarkerSize', 50);
-hold on;
-
-for i = 1:pcHol.Count
-    if(norm(victrans(i,:) - hol2vicon(i,:)) < 0.2)
-        errs = [errs norm(victrans(i,:) - hol2vicon(i,:))];
-        plot3([victrans(i, 1), hol2vicon(i,1)], [victrans(i, 2), hol2vicon(i,2)], [victrans(i, 3), hol2vicon(i,3)], 'r');
+    for i = 1:size(allpointclouds.hol{m},1)
+        holtrans = optimizedPars.St * ((1/optimizedPars.rho) * allpointclouds.hol{m}(i,:)') - optimizedPars.d; 
+        hol2vicon(i, :) = (holtrans)';
+        victrans(i, :) = (vic(i, :)' + euler2mat(Rvic(i, :)) * optimizedPars.t(:,m))';
     end
-end
 
-legend('\color{white} Transformed HoloLens','\color{white} Vicon', '\color{white} Hololens before tuning', '\color{white} Shifted Vicon', '\color{white} Error between HoloLens');
-title(['Registered Hololens tracking and Vicom tracking after tuning for ', num2str(m), 'th camera']);
+    pcHol = pointCloud(hol2vicon);
 
-dist = vecnorm((victrans - hol2vicon)');
-distgroups = kmeans(dist', 2);
-idxmin = distgroups(dist == min(dist));
-meanerr = mean(dist(distgroups == idxmin));
-fprintf(['For ', num2str(m), 'th camera the mean distance is: ',  num2str(meanerr), '\n' ]);
-hol2viccorr{m} = victrans - hol2vicon;
+
+    figure();
+    axis equal;
+    xlabel("x");
+    ylabel("y");
+    zlabel("z");
+    title(['Registered Hololens tracking and Vicom tracking after tuning for ', num2str(m), 'th camera']);
+    pcshowpair(pcHol, pcVicon, 'MarkerSize', 50);
+    hold on;
+
+    pcshow(pointCloud(allpointclouds.hol{m}, 'Color', repmat([1 1 0], length(allpointclouds.hol{m}),1)), 'MarkerSize', 50);
+    pcshow(pointCloud(victrans, 'Color', repmat([0 1 1], length(victrans), 1)),'MarkerSize', 50);
+    hold on;
+
+    for i = 1:pcHol.Count
+        if(norm(victrans(i,:) - hol2vicon(i,:)) < 0.2)
+            errs = [errs norm(victrans(i,:) - hol2vicon(i,:))];
+            plot3([victrans(i, 1), hol2vicon(i,1)], [victrans(i, 2), hol2vicon(i,2)], [victrans(i, 3), hol2vicon(i,3)], 'r');
+        end
+    end
+
+    legend('\color{white} Transformed HoloLens','\color{white} Vicon', '\color{white} Hololens before tuning', '\color{white} Shifted Vicon', '\color{white} Error between HoloLens');
+    title(['Registered Hololens tracking and Vicom tracking after tuning for ', num2str(m), 'th camera']);
+
+    dist = vecnorm((victrans - hol2vicon)');
+    distgroups = kmeans(dist', 2);
+    idxmin = distgroups(dist == min(dist));
+    meanerr = mean(dist(distgroups == idxmin));
+    fprintf(['For ', num2str(m), 'th camera the mean distance is: ',  num2str(meanerr), '\n' ]);
+    hol2viccorr{m} = victrans - hol2vicon;
 
 end
 
@@ -475,9 +388,17 @@ hold on;
 
 plot3(pcptsM.Location(Idx, 1), pcptsM.Location(Idx, 2),  pcptsM.Location(Idx, 3), 'or');
 title('HoloLens and Matterport alignemnt using Vicon');
+
+
+
+
+
+
+
+
 %% -------------------------------------------------------------------------------------------
-function [vicom, pvhololens, alldata, allhololens] = loadHololensData(folder)
-    vicom = readtable('./Vicon_session_2020_12_02/hololens_seq03.txt');
+function [vicom, pvhololens, alldata, allhololens] = loadHololensData(folder, viconpath)
+    vicom = readtable(viconpath);
     pvhololens = readtable([folder, 'pv.csv']);
     useAllCameras = true;
 
@@ -542,6 +463,93 @@ function res = optimizeICP(pcVicom, pcHoloLens)
     res.tform_rotate = affine3d(res.R);
 end
 
+function allpointclouds = createPointclouds(alldata, numOfCameras, tform_rotate, besttform)
+    
+    allpointclouds.pointclouds = cell(numOfCameras,1);
+    allpointclouds.cs = cell(numOfCameras,1);
+    allpointclouds.hol = cell(numOfCameras,1);
+
+    for i = 1:numOfCameras
+        if i == numOfCameras
+            allpointclouds.pointclouds{i} = pointCloud([alldata{i}.Position_X(2:end), alldata{i}.Position_Y(2:end), alldata{i}.Position_Z(2:end)]);
+            allpointclouds.pointclouds{i} = pctransform(pctransform(allpointclouds.pointclouds{i},tform_rotate), besttform);
+            allpointclouds.hol{i} = allpointclouds.pointclouds{i}.Location;
+            allpointclouds.cs{i} = round((alldata{i}.Timestamp(2:end) - min(alldata{1}.Timestamp)) /10^5) + 1;
+        else
+            allpointclouds.pointclouds{i} = pointCloud([alldata{i}.Position_X, alldata{i}.Position_Y, alldata{i}.Position_Z]);
+            allpointclouds.pointclouds{i} = pctransform(pctransform(allpointclouds.pointclouds{i},tform_rotate), besttform);
+            allpointclouds.hol{i} = allpointclouds.pointclouds{i}.Location;
+            allpointclouds.cs{i} = round((alldata{i}.Timestamp - min(alldata{1}.Timestamp)) /10^5) + 1;
+
+        end
+    end
+
+
+end
+
+function res = optimizeAlignmentTuning(Binit, Bmax, pcVicon, ViconRot, allpointclouds)
+
+res.minB = 0;
+res.params = [];
+res.vals = [];
+res.minval = realmax;
+res.initvals = [];
+initpar = [0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0];
+
+
+for B = Binit:Bmax 
+    vic = cell(6,1);
+    Rvic = cell(6,1);
+    vicsize = size(pcVicon.Location, 1);
+    for k = 1:6
+        i = allpointclouds.cs{k} + B; 
+        i(i > vicsize) = [];
+        vic{k} = pcVicon.Location(i, :);
+        Rvic{k} = ViconRot(i, :);
+    end
+    
+    fun = @(par)closerTransformation([[par(1) par(2) par(3)]', [par(4) par(5) par(6)]', ...
+    [par(7) par(8) par(9)]', [par(10) par(11) par(12)]', [par(13) par(14) par(15)]', ...
+    [par(16) par(17) par(18)]'], par(19), euler2mat([par(20) par(21) par(22)]), [par(23) par(24) par(25)]', ...
+    vic, Rvic, allpointclouds.hol);
+
+    options = optimset( 'MaxFunEvals', 1000 * 25);
+    [bestpar, bestval] = fminsearch(fun, initpar, options);
+    
+    %t, rho, S, d, C, R, D
+    res.initvals = [res.initvals closerTransformation([[initpar(1) initpar(2) initpar(3)]', [initpar(4) initpar(5) initpar(6)]', ...
+        [initpar(7) initpar(8) initpar(9)]', [initpar(10) initpar(11) initpar(12)]', [initpar(13) initpar(14) initpar(15)]', ...
+        [initpar(16) initpar(17) initpar(18)]'], initpar(19), euler2mat([initpar(20) initpar(21) initpar(22)]), [initpar(23) initpar(24) initpar(25)]', vic, Rvic, allpointclouds.hol)];
+    
+    res.params = [res.params bestpar];
+    res.vals = [res.vals bestval];
+    
+    if bestval < res.minval
+      minpar = bestpar;
+      res.minval = bestval; 
+      res.minB = B;
+    end
+    fprintf(['For B = ', num2str(B), ' the optimized value is ',  num2str(bestval),' parameters are:', '\n' ]);
+    bestpar
+    
+    %t, rho, S, d, C, R, D
+end
+
+fprintf(['Best B is ', num2str(res.minB), ' the optimized value is ',  num2str(res.minval),' parameters are:', '\n' ]);
+minpar
+
+res.St = euler2mat([minpar(20) minpar(21) minpar(22)])';
+res.rho = minpar(19);
+res.d = [minpar(23) minpar(24) minpar(25)]';
+res.t = [[minpar(1) minpar(2) minpar(3)]' ...
+[minpar(4) minpar(5) minpar(6)]' ...
+[minpar(7) minpar(8) minpar(9)]' ...
+[minpar(10) minpar(11) minpar(12)]' ...
+[minpar(13) minpar(14) minpar(15)]' ...
+[minpar(16) minpar(17) minpar(18)]'];
+
+end
+
 
 function res = closerTransformation(t, rho, S, d, C, Rv, D)
 %     C-known
@@ -554,8 +562,8 @@ function res = closerTransformation(t, rho, S, d, C, Rv, D)
 
     res = cell(6,1);
 
-     for k = 1:6
-%     for k = 6
+%     for k = 1:6
+     for k = 6
         
         num = size(Rv{k},1);
         res{k} = zeros(num, 1);
@@ -564,26 +572,14 @@ function res = closerTransformation(t, rho, S, d, C, Rv, D)
             R = euler2mat(Rv{k}(i,:));
             f = C{k}(i,:)' + R * t(:,k) - (1/rho) * S' * D{k}(i,:)' - d;
             res{k}(i) = norm(f)^2;
-            %res = res + log(norm(f) + 1);
         end
     end
     res = cell2mat(res);
     
     idx = kmeans(res, 2, 'Start', [min(res); max(res)]); %nemusi se vubec definovat, nebo mean(res) a mean(res) * 100
     idxmin = idx(res == min(res));
-%    idxmax = max(idx);
-%     
-%     figure();
-%     plot(res(idx == idxmin), 'r.');
-%     hold on;
-%     plot(res(idx == idxmax), 'b.');
-%     
-    res = sum(res(idx == idxmin(1))) + 10 * (norm(t) + norm(d)); %pak fixnout t(:,k) na t
+    res = sum(res(idx == idxmin(1))) + 10 * (norm(t(:,k)) + norm(d)); %pak fixnout t(:,k) na t
     
-
-    
-    %res = sum(res(idx == idxmin))  + 10 * log(norm(t) + 1) + 10 * log(norm(d) + 1);
-    %res = sum(norm(C + R*t - 1/ro * S' * D - d));
 end
 
 function R = euler2mat(e)
